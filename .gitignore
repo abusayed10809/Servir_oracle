@@ -3,6 +3,7 @@
 build/
 dist/
 nbproject/private/
+nbproject
 **/nbproject/private/
 
 #Class files#
