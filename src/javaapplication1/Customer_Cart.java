@@ -7,13 +7,6 @@ package javaapplication1;
 //import servir_project.UI.CustomerInterface;
 
 import java.awt.HeadlessException;
-import java.sql.Connection;
-import java.sql.DriverManager;
-//import java.sql.SQLException;
-import java.sql.PreparedStatement;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.ArrayList;
 import javax.swing.JOptionPane;
 import javax.swing.UIManager;
@@ -21,6 +14,15 @@ import javax.swing.table.DefaultTableModel;
 import java.awt.Font;
 import java.sql.*;
 import javax.swing.JFrame;
+
+import oracle.sql.ArrayDescriptor;
+import oracle.sql.ARRAY;
+
+//import java.sql.Types;
+import oracle.jdbc.OracleCallableStatement;
+import oracle.jdbc.internal.OracleTypes;
+
+
 
 /**
  *
@@ -31,7 +33,7 @@ public class Customer_Cart extends javax.swing.JFrame {
     /**
      * Creates new form Customer_Cart
      */
-    public static String currentCustID;
+    CallableStatement callstate;
     
     public Customer_Cart() {
         initComponents();
@@ -47,7 +49,6 @@ public class Customer_Cart extends javax.swing.JFrame {
             //Class.forName("com.mysql.jdbc.Driver");
             conn = DriverManager.getConnection("jdbc:oracle:thin:@localhost:1521:xe", "shehreen", "oliveoil1000");
 //            conn = DriverManager.getConnection("jdbc:oracle:thin:@localhost:1521:morcl", "shehreen", "oliveoil1000");
-            //JOptionPane.showMessageDialog(null,"Database Connection Successful...");
             return conn;
         } catch (HeadlessException | SQLException e) {
             JOptionPane.showMessageDialog(null, "oracle Connection Failed...");
@@ -334,11 +335,9 @@ public class Customer_Cart extends javax.swing.JFrame {
 
                 ps.setInt(1, Integer.parseInt(textfield_amount.getText()));
                 ps.setInt(2, Integer.parseInt(textfield_price.getText()));
-                //ps.setString(3, textfield_id.getText());
                 ps.setInt(3, Integer.parseInt(textfield_id.getText()));
 
                 int res = ps.executeUpdate();
-                //fillTable();
                 if (res >= 1) {
                     //JOptionPane.showMessageDialog(null, "Items"+ " have been added.....");
                 } else {
@@ -349,9 +348,6 @@ public class Customer_Cart extends javax.swing.JFrame {
             } catch (HeadlessException | NumberFormatException | SQLException e) {
                 JOptionPane.showMessageDialog(null, e);
             }
-            //textfield_id1.setText("");
-            //textfield_id.setText("");
-            //textfield_amount.setText("");
         } else {
 
             JOptionPane.showMessageDialog(null, "All fields are mandatory.......");
@@ -367,10 +363,7 @@ public class Customer_Cart extends javax.swing.JFrame {
 
                 ps.setInt(1, Integer.parseInt(textfield_amount.getText()));
                 ps.setInt(2, Integer.parseInt(textfield_id.getText()));
-                //ps.setString(3, textfield_name.getText());
-
                 int res = ps.executeUpdate();
-                //fillTable();
                 if (res >= 1) {
                     //JOptionPane.showMessageDialog(null, "Items"+ " have been added.....");
                 } else {
@@ -381,7 +374,6 @@ public class Customer_Cart extends javax.swing.JFrame {
             } catch (HeadlessException | NumberFormatException | SQLException e) {
                 JOptionPane.showMessageDialog(null, e);
             }
-            //textfield_id1.setText("");
             textfield_id.setText("");
             textfield_amount.setText("");
             fillTable();
@@ -420,19 +412,66 @@ public class Customer_Cart extends javax.swing.JFrame {
             ResultSet rs = st.executeQuery(firstqry);
             rs.next();
             currentCustomerID = rs.getInt(1);
+
+           //this part is to get discount percentage
+            callstate = conn.prepareCall("{call getDisc(?,?)}");
+            callstate.registerOutParameter(2, Types.VARCHAR);
+
+            callstate.setInt(1,currentCustomerID);
+            callstate.execute();                
+            String discPercentage = callstate.getString(2);
             
-            JOptionPane.showMessageDialog(null, "cust id " + currentCustomerID);
+            double discountPercentage = Double.parseDouble(discPercentage);
+            double finalAmount = Double.parseDouble(amount);
+            System.out.println(finalAmount);
             
-            if (amount != null) {
-                JOptionPane.showMessageDialog(null, "Please pay " + amount + " BDT.");
+            finalAmount = finalAmount - finalAmount * discountPercentage/100;
+            System.out.println(discountPercentage/100);
+            System.out.println(finalAmount);
+
+           //calling the insert_into_total_sales function  here
+
+            ArrayList<CartBean> itemsOrderedList = null;
+            itemsOrderedList = retrieveData();
+            int noOfItems = itemsOrderedList.size();
+
+            CartBean[] itemsOrderedArray = new CartBean[noOfItems];
+            itemsOrderedArray = itemsOrderedList.toArray(itemsOrderedArray);
+
+
+            Object[] itemsOrderedObjects = new Object[noOfItems];
+            for (int i = 0; i < noOfItems; i++) {
+              itemsOrderedObjects[i] = conn.createStruct( "ALACARTE_DATA_TYPE", new Object[]{ itemsOrderedArray[i].getId(), itemsOrderedArray[i].getName(), itemsOrderedArray[i].getPrice(), itemsOrderedArray[i].getAmount() } );
+            }
+
+            ArrayDescriptor arrDes = ArrayDescriptor.createDescriptor("ALACARTE_TABLE_TYPE", conn);    
+            ARRAY arrayToPass = new ARRAY(arrDes, conn, itemsOrderedObjects);
+            
+            CallableStatement cstmt = (OracleCallableStatement) conn.prepareCall("{? = call insert_into_total_sales(?, ?, ?, ?)}");
+
+            cstmt.registerOutParameter(1, Types.INTEGER);
+            cstmt.setInt(2, currentCustomerID);   //current customer id           
+
+            //should this be rounded to 2 decimal points??
+            cstmt.setDouble(3, finalAmount);         // total_payable double/float
+
+            int hadDisc = 0;
+            if( Double.compare(discountPercentage, new Double("0")) > 0 ){
+              hadDisc = 1;
+            }
+            
+            cstmt.setInt(4, hadDisc);               // had discount 0/1
+            cstmt.setArray(5, arrayToPass);        // arrayToPass
+
+            cstmt.executeUpdate();
+            int slipNumber = cstmt.getInt(1);
+
+            if (finalAmount != 0.0) {
+                JOptionPane.showMessageDialog(null, "Your Slip Number:  " + slipNumber + "\nPlease pay " + finalAmount + " BDT.");
             } else {
                 JOptionPane.showMessageDialog(null, "Please pay 0 BDT.");
             }
 
-            //do the calculations in this part
-            //do the calculations in this part
-            //do the calculations in this part
-            
             String qry = "delete from cart";
             PreparedStatement ps = conn.prepareStatement(qry);
             int res = ps.executeUpdate();
@@ -441,12 +480,14 @@ public class Customer_Cart extends javax.swing.JFrame {
             String qryNew = "delete from temporary_customer";
             PreparedStatement psNew = conn.prepareStatement(qryNew);
             int resNew = psNew.executeUpdate();
+
             
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(null, e);
         }
         dispose();
     }//GEN-LAST:event_Done_ButtonActionPerformed
+
 
     public void showItemToFields(int index) {
         textfield_id.setText(Integer.toString(retrieveData().get(index).getId()));

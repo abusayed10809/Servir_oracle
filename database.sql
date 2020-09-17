@@ -7,6 +7,10 @@ disc;
 connect shehreen/oliveoil1000;
 
 
+set linesize 200;
+set serveroutput on size 100000;
+
+
 
 create table inventory(
 	id number primary key,
@@ -383,7 +387,6 @@ begin
     from customer
     where customer_id = m_customer_id;
   end if;
-
   return m_lastDiscDate;
 
 end;
@@ -433,6 +436,14 @@ end;
 /
 
 show errors;
+
+
+--------------------
+show items of total_sales table
+--------------------
+
+select x.slip_no, x.order_date, x.customer_id, x.total_payable, x.had_disc, y.*
+from total_sales x, table(x.items_ordered) y;
 
 commit;
 
